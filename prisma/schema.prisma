@@ -1,0 +1,212 @@
+// Part B: The Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum UserRole {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum DocumentType {
+  BUSINESS_LICENSE
+  INSURANCE
+  GOVT_ID
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// 1. User Model (Unified Account)
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  passwordHash  String
+  phone         String?
+  role          UserRole  @default(CUSTOMER)
+  isVerified    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  vendorProfiles VendorProfile[] // One User can own multiple Vendor Profiles
+  reviews        Review[]        // Reviews written by this user
+  favorites      Favorite[]      // Vendor profiles saved by this user
+  
+  // Messaging
+  conversationsAsUser Conversation[] // Conversations where this user is the customer
+  sentMessages        Message[]      // Messages sent by this user
+}
+
+// 2. Vendor Profile Model
+model VendorProfile {
+  id                  Int      @id @default(autoincrement())
+  businessName        String
+  bio                 String?  @db.Text
+  basePrice           Decimal  @db.Decimal(10, 2) // Starting price
+  portfolioImages     String[] // Array of image URLs
+  city                String
+  locationCoordinates Json?    // Optional: { lat: number, lng: number }
+  
+  // Foreign Keys
+  userId              Int
+  owner               User     @relation(fields: [userId], references: [id])
+
+  // Relationships
+  legalDocuments      LegalDocument[]
+  reviews             Review[]
+  favorites           Favorite[]
+  services            Service[] // Specific services offered (e.g., "Wedding DJ Package")
+  
+  // Messaging
+  conversations       Conversation[] // Conversations directed to this business
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+// 3. Legal Documents (Compliance)
+model LegalDocument {
+  id              Int            @id @default(autoincrement())
+  documentUrl     String
+  type            DocumentType
+  status          DocumentStatus @default(PENDING)
+  rejectionReason String?
+
+  // Foreign Keys
+  vendorProfileId Int
+  vendorProfile   VendorProfile  @relation(fields: [vendorProfileId], references: [id])
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+// 4. Search Hierarchy: Event Types & Service Categories
+
+// e.g., "Wedding", "Birthday", "Corporate"
+model EventType {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  slug String @unique
+
+  // Many-to-Many with ServiceCategory (Explicit Bridge)
+  serviceCategories EventTypeServiceCategory[] 
+}
+
+// e.g., "DJ", "Photographer", "Catering"
+model ServiceCategory {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+  slug String @unique
+
+  // Many-to-Many with EventType (Explicit Bridge)
+  eventTypes EventTypeServiceCategory[]
+
+  // Services that belong to this category
+  services   Service[]
+}
+
+// Explicit Bridge Table
+model EventTypeServiceCategory {
+  eventTypeId       Int
+  serviceCategoryId Int
+  
+  eventType       EventType       @relation(fields: [eventTypeId], references: [id])
+  serviceCategory ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+
+  @@id([eventTypeId, serviceCategoryId]) // Composite Primary Key
+}
+
+// 5. Specific Services offered by Vendors
+// This allows a vendor to list specific items under their profile linked to a category
+model Service {
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String? @db.Text
+  price       Decimal @db.Decimal(10, 2)
+
+  // Foreign Keys
+  vendorProfileId   Int
+  vendorProfile     VendorProfile   @relation(fields: [vendorProfileId], references: [id])
+  
+  serviceCategoryId Int
+  serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+}
+
+// 6. Social Proof: Reviews
+model Review {
+  id        Int      @id @default(autoincrement())
+  rating    Int      // 1-5
+  comment   String?  @db.Text
+  
+  // Foreign Keys
+  userId          Int // Author
+  user            User          @relation(fields: [userId], references: [id])
+  
+  vendorProfileId Int // Target
+  vendorProfile   VendorProfile @relation(fields: [vendorProfileId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// 7. Favorites / Wishlist
+model Favorite {
+  id        Int      @id @default(autoincrement())
+  
+  userId          Int
+  user            User          @relation(fields: [userId], references: [id])
+  
+  vendorProfileId Int
+  vendorProfile   VendorProfile @relation(fields: [vendorProfileId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, vendorProfileId]) // Prevent duplicate favorites
+}
+
+// 8. Messaging System
+
+model Conversation {
+  id        Int      @id @default(autoincrement())
+  
+  // Participants
+  userId          Int // The Customer
+  user            User          @relation(fields: [userId], references: [id])
+  
+  vendorProfileId Int // The Business
+  vendorProfile   VendorProfile @relation(fields: [vendorProfileId], references: [id])
+
+  messages        Message[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt // Updated when new message sent
+
+  @@unique([userId, vendorProfileId]) // One conversation per user-vendor pair
+}
+
+model Message {
+  id             Int      @id @default(autoincrement())
+  content        String   @db.Text
+  isRead         Boolean  @default(false)
+  
+  // Foreign Keys
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  
+  senderId       Int // Could be the User.id of the customer OR the User.id of the vendor owner
+  sender         User         @relation(fields: [senderId], references: [id])
+
+  createdAt      DateTime @default(now())
+}
