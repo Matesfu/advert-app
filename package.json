@@ -17,8 +17,8 @@
     "prisma",
     "event-marketplace"
   ],
-  "author": "Antigravity",
-  "license": "ISC",
+  "author": "Tesfu",
+  "license": "Apache",
   "dependencies": {
     "@prisma/client": "^6.3.0",
     "cors": "^2.8.5",
