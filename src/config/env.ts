@@ -9,7 +9,21 @@ const envSchema = z.object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.string().default('3000'),
     DATABASE_URL: z.string().url(),
-    // Add future variables here (e.g. JWT_SECRET, AWS_KEYS)
+
+    // Google OAuth 2.0
+    GOOGLE_CLIENT_ID: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
+    GOOGLE_CLIENT_SECRET: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),
+    GOOGLE_REDIRECT_URL: z.string().url('GOOGLE_REDIRECT_URL must be a valid URL'),
+
+    // SMTP / Email Verification
+    SMTP_HOST: z.string().min(1, 'SMTP_HOST is required'),
+    SMTP_PORT: z.string().default('587'),
+    SMTP_USER: z.string().min(1, 'SMTP_USER is required'),
+    SMTP_PASS: z.string().min(1, 'SMTP_PASS is required'),
+    SMTP_FROM: z.string().min(1, 'SMTP_FROM is required'),
+
+    // Frontend
+    FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URL'),
 });
 
 // Validate process.env

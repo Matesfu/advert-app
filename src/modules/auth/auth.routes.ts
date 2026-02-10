@@ -6,6 +6,8 @@ import {
     registerSchema,
     loginSchema,
     changePasswordSchema,
+    resendVerificationSchema,
+    verifyEmailQuerySchema,
 } from './auth.schema';
 
 const router = Router();
@@ -39,6 +41,48 @@ router.post(
     '/login',
     validateRequest(loginSchema),
     authController.login
+);
+
+/**
+ * @route   GET /api/v1/auth/verify-email
+ * @desc    Verify email address
+ * @access  Public
+ */
+router.get(
+    '/verify-email',
+    validateRequest(verifyEmailQuerySchema, 'query'),
+    authController.verifyEmail
+);
+
+/**
+ * @route   POST /api/v1/auth/resend-verification
+ * @desc    Resend verification email
+ * @access  Public
+ */
+router.post(
+    '/resend-verification',
+    validateRequest(resendVerificationSchema),
+    authController.resendVerification
+);
+
+/**
+ * @route   GET /api/v1/auth/google
+ * @desc    Initiate Google OAuth
+ * @access  Public
+ */
+router.get(
+    '/google',
+    authController.googleAuth
+);
+
+/**
+ * @route   GET /api/v1/auth/google/callback
+ * @desc    Google OAuth Callback
+ * @access  Public
+ */
+router.get(
+    '/google/callback',
+    authController.googleCallback
 );
 
 // ============================================
