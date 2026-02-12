@@ -2,16 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '@prisma/client';
 import { AppError } from '../utils/AppError';
 import { logger } from '../utils/logger';
+import { verifyAccessToken, verifyCsrfToken } from '../utils/token';
 
 // Note: Express Request augmentation is defined in src/types/express.d.ts
-// Declaration files are automatically included by TypeScript (no import needed)
 
 /**
- * Authentication middleware - Protects routes by verifying JWT token.
- * 
- * Currently a placeholder implementation that checks for Authorization header.
- * TODO: Implement actual JWT verification when auth service is complete.
- * 
+ * Authentication middleware - Protects routes by verifying the JWT access token
+ * from the Authorization header and the CSRF token from the x-csrf-token header.
+ *
  * @example
  * router.get('/profile', protect, controller.getProfile);
  */
@@ -20,7 +18,7 @@ export const protect = async (
     res: Response,
     next: NextFunction
 ): Promise<void> => {
-    // 1. Get token from Authorization header
+    // 1. Extract access token from Authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -33,47 +31,56 @@ export const protect = async (
         throw new AppError('Invalid authentication token.', 401);
     }
 
-    // TODO: Implement actual JWT verification
-    // For now, this is a placeholder that logs the attempt
-    logger.debug(`Auth middleware: Token received (first 20 chars): ${token.substring(0, 20)}...`);
+    // 2. Verify the JWT access token
+    let decoded;
+    try {
+        decoded = verifyAccessToken(token);
+    } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'TokenExpiredError') {
+            throw new AppError('Your session has expired. Please refresh your token.', 401);
+        }
+        throw new AppError('Invalid authentication token.', 401);
+    }
 
-    /**
-     * PLACEHOLDER: In production, this should:
-     * 1. Verify the JWT token using jsonwebtoken library
-     * 2. Decode the payload to get user ID
-     * 3. Fetch user from database using prisma
-     * 4. Attach user to request
-     * 
-     * Example implementation:
-     * const decoded = jwt.verify(token, env.JWT_SECRET) as { id: number };
-     * const user = await prisma.user.findUnique({ where: { id: decoded.id } });
-     * if (!user) throw new AppError('User no longer exists.', 401);
-     * req.user = { id: user.id, email: user.email, role: user.role };
-     */
+    // 3. Verify CSRF token (for state-changing requests: POST, PUT, PATCH, DELETE)
+    const method = req.method.toUpperCase();
+    const csrfExemptMethods = ['GET', 'HEAD', 'OPTIONS'];
 
-    // Temporary mock user for development
+    if (!csrfExemptMethods.includes(method)) {
+        const csrfToken = req.headers['x-csrf-token'] as string;
+
+        if (!csrfToken) {
+            throw new AppError('CSRF token is required for this request.', 403);
+        }
+
+        if (!verifyCsrfToken(csrfToken)) {
+            throw new AppError('Invalid CSRF token.', 403);
+        }
+    }
+
+    // 4. Attach user data to request
     req.user = {
-        id: 1,
-        email: 'mock@example.com',
-        role: 'CUSTOMER' as UserRole,
-        authProvider: 'local',
+        id: decoded.userId,
+        email: decoded.email,
+        role: decoded.role as UserRole,
+        authProvider: decoded.authProvider,
     };
 
-    logger.info(`Protected route accessed by user: ${req.user.email}`);
+    logger.debug(`Protected route accessed by user: ${req.user.email}`);
     next();
 };
 
 /**
  * Authorization middleware - Restricts route access to specific roles.
  * Must be used AFTER the protect middleware.
- * 
+ *
  * @param allowedRoles - Array of roles that can access the route
  * @returns Express middleware function
- * 
+ *
  * @example
  * // Only vendors can access
  * router.post('/services', protect, restrictTo('VENDOR'), controller.createService);
- * 
+ *
  * // Admins and vendors can access
  * router.delete('/:id', protect, restrictTo('ADMIN', 'VENDOR'), controller.delete);
  */

@@ -24,6 +24,20 @@ const envSchema = z.object({
 
     // Frontend
     FRONTEND_URL: z.string().url('FRONTEND_URL must be a valid URL'),
+
+    // JWT Access Token
+    JWT_ACCESS_SECRET: z.string().min(16, 'JWT_ACCESS_SECRET must be at least 16 characters'),
+    JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
+
+    // JWT Refresh Token
+    JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 characters'),
+    JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
+
+    // CSRF
+    CSRF_SECRET: z.string().min(16, 'CSRF_SECRET must be at least 16 characters'),
+
+    // Cookie
+    COOKIE_DOMAIN: z.string().optional(),
 });
 
 // Validate process.env

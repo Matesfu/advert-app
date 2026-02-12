@@ -4,9 +4,18 @@ import { z } from 'zod';
  * Schema for updating user profile.
  */
 export const updateUserSchema = z.object({
+    displayName: z
+        .string()
+        .min(1, 'Display name cannot be empty')
+        .max(100, 'Display name is too long')
+        .optional(),
     phone: z
         .string()
         .regex(/^\+?[\d\s-]{10,}$/, 'Invalid phone number format')
+        .optional(),
+    avatarUrl: z
+        .string()
+        .url('Avatar URL must be a valid URL')
         .optional(),
 });
 

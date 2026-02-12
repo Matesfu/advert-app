@@ -34,7 +34,7 @@ router.post(
 
 /**
  * @route   POST /api/v1/auth/login
- * @desc    Authenticate user and get token
+ * @desc    Authenticate user and get tokens
  * @access  Public
  */
 router.post(
@@ -66,6 +66,16 @@ router.post(
 );
 
 /**
+ * @route   POST /api/v1/auth/refresh
+ * @desc    Refresh access token using refresh token cookie
+ * @access  Public (authenticated via HttpOnly cookie)
+ */
+router.post(
+    '/refresh',
+    authController.refreshToken
+);
+
+/**
  * @route   GET /api/v1/auth/google
  * @desc    Initiate Google OAuth
  * @access  Public
@@ -91,13 +101,24 @@ router.get(
 
 /**
  * @route   POST /api/v1/auth/logout
- * @desc    Logout current user
+ * @desc    Logout current user (invalidate refresh token)
  * @access  Private
  */
 router.post(
     '/logout',
     protect,
     authController.logout
+);
+
+/**
+ * @route   POST /api/v1/auth/logout-all
+ * @desc    Logout from all devices
+ * @access  Private
+ */
+router.post(
+    '/logout-all',
+    protect,
+    authController.logoutAll
 );
 
 /**
@@ -113,7 +134,7 @@ router.get(
 
 /**
  * @route   PATCH /api/v1/auth/change-password
- * @desc    Change user password
+ * @desc    Change user password (invalidates all sessions)
  * @access  Private
  */
 router.patch(

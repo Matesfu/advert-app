@@ -42,12 +42,14 @@ model User {
   isVerified    Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?                        // Soft-delete timestamp
 
   // Relationships
   vendorProfiles          VendorProfile[]          // One User can own multiple Vendor Profiles
   reviews                 Review[]                 // Reviews written by this user
   favorites               Favorite[]               // Vendor profiles saved by this user
   emailVerificationTokens EmailVerificationToken[] // Email verification tokens
+  refreshTokens           RefreshToken[]           // JWT refresh tokens
 
   // Messaging
   conversationsAsUser Conversation[] // Conversations where this user is the customer
@@ -62,6 +64,21 @@ model EmailVerificationToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
+}
+
+// Refresh Token (for JWT auth - Phase 2)
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?                // Browser/device info for audit
+  ipAddress String?                // Client IP for audit
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // 2. Vendor Profile Model
