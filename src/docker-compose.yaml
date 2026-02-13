@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  # The Database Service
+  postgres:
+    image: postgres:15-alpine  # Lightweight version of Postgres
+    container_name: eventify_db_container
+    restart: always
+    environment:
+      POSTGRES_USER: admin       # Your Database Username
+      POSTGRES_PASSWORD: password123 # Your Database Password
+      POSTGRES_DB: eventify_db   # Your Database Name
+    ports:
+      - "5433:5432"              # Maps localhost:5432 -> Container:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist data even if container stops
+
+volumes:
+  postgres_data: # Define the volume storage
