@@ -17,6 +17,7 @@ import favoriteRoutes from './modules/favorites/favorite.routes';
 import messageRoutes from './modules/messages/message.routes';
 import categoryRoutes from './modules/categories/category.routes';
 import eventTypeRoutes from './modules/event-types/event-type.routes';
+import serviceCategoryRoutes from './modules/service-categories/service-category.routes';
 
 // Initialize App
 const app = express();
@@ -47,8 +48,9 @@ app.use('/api/v1/favorites', favoriteRoutes);
 app.use('/api/v1/messages', messageRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 
-// Admin Module Routes
-app.use('/api/v1/admin/event-types', eventTypeRoutes);
+// Event & Category Routes (GET: public, mutations: admin-only)
+app.use('/api/v1/event-types', eventTypeRoutes);
+app.use('/api/v1/service-categories', serviceCategoryRoutes);
 
 // Nested Routes (Reviews under Vendors)
 app.use('/api/v1/vendors/:vendorId/reviews', reviewRoutes);

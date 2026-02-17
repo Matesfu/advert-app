@@ -14,34 +14,21 @@ import {
 const router = Router();
 
 /**
- * Event Type Admin Routes
- * Base path: /api/v1/admin/event-types
+ * Event Type Routes
+ * Base path: /api/v1/event-types
  *
- * All routes require authentication (protect) and ADMIN role (restrictTo).
+ * GET routes are public (no auth required).
+ * Mutation routes (POST, PATCH, DELETE, PUT) require Admin authentication.
  */
 
-// Apply auth middleware to ALL routes in this router
-router.use(protect, restrictTo('ADMIN'));
-
 // ============================================
-// COLLECTION ROUTES
+// PUBLIC ROUTES (no auth required)
 // ============================================
 
 /**
- * @route   POST /api/v1/admin/event-types
- * @desc    Create a new event type
- * @access  Admin only
- */
-router.post(
-    '/',
-    validateRequest(createEventTypeSchema),
-    eventTypeController.create
-);
-
-/**
- * @route   GET /api/v1/admin/event-types
+ * @route   GET /api/v1/event-types
  * @desc    List all event types (paginated, searchable, sortable)
- * @access  Admin only
+ * @access  Public
  */
 router.get(
     '/',
@@ -49,14 +36,10 @@ router.get(
     eventTypeController.getAll
 );
 
-// ============================================
-// SINGLE RESOURCE ROUTES
-// ============================================
-
 /**
- * @route   GET /api/v1/admin/event-types/:id
+ * @route   GET /api/v1/event-types/:id
  * @desc    Get a single event type by ID with linked categories
- * @access  Admin only
+ * @access  Public
  */
 router.get(
     '/:id',
@@ -64,40 +47,59 @@ router.get(
     eventTypeController.getOne
 );
 
+// ============================================
+// ADMIN-ONLY ROUTES (auth + ADMIN role required)
+// ============================================
+
 /**
- * @route   PATCH /api/v1/admin/event-types/:id
+ * @route   POST /api/v1/event-types
+ * @desc    Create a new event type
+ * @access  Admin only
+ */
+router.post(
+    '/',
+    protect,
+    restrictTo(UserRole.ADMIN),
+    validateRequest(createEventTypeSchema),
+    eventTypeController.create
+);
+
+/**
+ * @route   PATCH /api/v1/event-types/:id
  * @desc    Update event type name and/or sync service categories
  * @access  Admin only
  */
 router.patch(
     '/:id',
+    protect,
+    restrictTo(UserRole.ADMIN),
     validateRequest(idParamSchema, 'params'),
     validateRequest(updateEventTypeSchema),
     eventTypeController.update
 );
 
 /**
- * @route   DELETE /api/v1/admin/event-types/:id
+ * @route   DELETE /api/v1/event-types/:id
  * @desc    Delete an event type and its category links
  * @access  Admin only
  */
 router.delete(
     '/:id',
+    protect,
+    restrictTo(UserRole.ADMIN),
     validateRequest(idParamSchema, 'params'),
     eventTypeController.remove
 );
 
-// ============================================
-// SUB-RESOURCE ROUTES
-// ============================================
-
 /**
- * @route   PUT /api/v1/admin/event-types/:id/categories
+ * @route   PUT /api/v1/event-types/:id/categories
  * @desc    Sync (full-replace) linked service categories
  * @access  Admin only
  */
 router.put(
     '/:id/categories',
+    protect,
+    restrictTo(UserRole.ADMIN),
     validateRequest(idParamSchema, 'params'),
     validateRequest(syncCategoriesSchema),
     eventTypeController.syncCategories

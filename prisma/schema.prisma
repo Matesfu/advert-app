@@ -138,9 +138,10 @@ model EventType {
 
 // e.g., "DJ", "Photographer", "Catering"
 model ServiceCategory {
-  id   Int    @id @default(autoincrement())
-  name String @unique
-  slug String @unique
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  slug     String  @unique
+  imageUrl String?           // URL to category image (e.g. CDN link)
 
   // Many-to-Many with EventType (Explicit Bridge)
   eventTypes EventTypeServiceCategory[]

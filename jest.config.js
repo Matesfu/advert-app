@@ -7,4 +7,8 @@ module.exports = {
     clearMocks: true,
     resetMocks: true,
     restoreMocks: true,
+    // Map ESM-only packages to manual CJS mocks
+    moduleNameMapper: {
+        '^uuid$': '<rootDir>/src/__mocks__/uuid.js',
+    },
 };
