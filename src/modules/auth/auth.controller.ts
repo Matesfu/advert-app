@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { authService } from './auth.service';
-import { sendSuccess, sendCreated, sendNoContent } from '../../utils/response';
+import { sendSuccess, sendCreated } from '../../utils/response';
+import { setRefreshTokenCookie, clearRefreshTokenCookie } from '../../utils/token';
 import { logger } from '../../utils/logger';
 import type {
     RegisterInput,
@@ -24,25 +25,34 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     logger.info(`[AuthController] User registered successfully: ${result.user.email}`);
 
-    // 201 Created
     sendCreated(res, result.user, result.message);
 };
 
 /**
  * @route   POST /api/v1/auth/login
- * @desc    Authenticate user (Local)
+ * @desc    Authenticate user and get tokens
  * @access  Public
  */
 export const login = async (req: Request, res: Response): Promise<void> => {
     const data = req.body as LoginInput;
+    const userAgent = req.headers['user-agent'];
+    const ipAddress = req.ip;
 
     logger.info(`[AuthController] Login request for email: ${data.email}`);
 
-    const result = await authService.login(data);
+    const result = await authService.login(data, userAgent, ipAddress);
+
+    // Set refresh token in HttpOnly cookie
+    setRefreshTokenCookie(res, result.refreshToken);
 
     logger.info(`[AuthController] User logged in successfully: ${result.user.email}`);
 
-    sendSuccess(res, result, 200, 'Login successful');
+    // Return access token and CSRF token in response body (NOT the refresh token)
+    sendSuccess(res, {
+        user: result.user,
+        accessToken: result.accessToken,
+        csrfToken: result.csrfToken,
+    }, 200, 'Login successful');
 };
 
 /**
@@ -74,7 +84,6 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
 
     await authService.resendVerification(data);
 
-    // Generic response for security
     sendSuccess(res, null, 200, 'If an account with that email exists, a verification link has been sent.');
 };
 
@@ -101,28 +110,91 @@ export const googleCallback = async (req: Request, res: Response): Promise<void>
         return;
     }
 
+    const userAgent = req.headers['user-agent'];
+    const ipAddress = req.ip;
+
     logger.info('[AuthController] Google callback received');
 
-    const result = await authService.googleCallback(code);
+    const result = await authService.googleCallback(code, userAgent, ipAddress);
+
+    // Set refresh token in HttpOnly cookie
+    setRefreshTokenCookie(res, result.refreshToken);
 
     logger.info(`[AuthController] Google login successful for: ${result.user.email}`);
 
-    sendSuccess(res, result, 200, 'Login successful');
+    sendSuccess(res, {
+        user: result.user,
+        accessToken: result.accessToken,
+        csrfToken: result.csrfToken,
+    }, 200, 'Login successful');
+};
+
+/**
+ * @route   POST /api/v1/auth/refresh
+ * @desc    Refresh access token using refresh token cookie
+ * @access  Public (uses refresh token cookie for auth)
+ */
+export const refreshToken = async (req: Request, res: Response): Promise<void> => {
+    const oldRefreshToken = req.cookies?.refreshToken;
+
+    if (!oldRefreshToken) {
+        res.status(401).json({ status: 'fail', message: 'No refresh token provided.' });
+        return;
+    }
+
+    const userAgent = req.headers['user-agent'];
+    const ipAddress = req.ip;
+
+    logger.info('[AuthController] Token refresh request');
+
+    const result = await authService.refreshSession(oldRefreshToken, userAgent, ipAddress);
+
+    // Set new refresh token cookie (rotation)
+    setRefreshTokenCookie(res, result.refreshToken);
+
+    // Return new access token and new CSRF token
+    sendSuccess(res, {
+        user: result.user,
+        accessToken: result.accessToken,
+        csrfToken: result.csrfToken,
+    }, 200, 'Token refreshed successfully');
 };
 
 /**
  * @route   POST /api/v1/auth/logout
- * @desc    Logout current user
+ * @desc    Logout current user — invalidate refresh token
  * @access  Private
  */
 export const logout = async (req: Request, res: Response): Promise<void> => {
-    const userId = req.user!.id;
+    const refreshTokenValue = req.cookies?.refreshToken;
 
-    logger.info(`[AuthController] Logout request for user ID: ${userId}`);
+    logger.info(`[AuthController] Logout request for user ID: ${req.user!.id}`);
 
-    await authService.logout(userId);
+    // Delete refresh token from database
+    await authService.logout(refreshTokenValue);
+
+    // Clear the refresh token cookie
+    clearRefreshTokenCookie(res);
 
     sendSuccess(res, null, 200, 'Logged out successfully');
+};
+
+/**
+ * @route   POST /api/v1/auth/logout-all
+ * @desc    Logout from all devices
+ * @access  Private
+ */
+export const logoutAll = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.id;
+
+    logger.info(`[AuthController] Logout all sessions for user ID: ${userId}`);
+
+    await authService.logoutAll(userId);
+
+    // Clear this device's cookie
+    clearRefreshTokenCookie(res);
+
+    sendSuccess(res, null, 200, 'Logged out from all devices successfully');
 };
 
 /**
@@ -142,7 +214,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
 
 /**
  * @route   PATCH /api/v1/auth/change-password
- * @desc    Change current user's password
+ * @desc    Change current user's password (invalidates all sessions)
  * @access  Private
  */
 export const changePassword = async (req: Request, res: Response): Promise<void> => {
@@ -153,7 +225,10 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
     await authService.changePassword(userId, data);
 
-    logger.info(`[AuthController] Password changed successfully for user ID: ${userId}`);
+    // Clear this device's refresh cookie since all sessions are invalidated
+    clearRefreshTokenCookie(res);
 
-    sendNoContent(res);
+    logger.info(`[AuthController] Password changed for user ID: ${userId}`);
+
+    sendSuccess(res, null, 200, 'Password changed successfully. Please log in again on all devices.');
 };

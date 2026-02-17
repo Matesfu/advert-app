@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 
 import { globalErrorHandler } from './middlewares/error.middleware';
 import { AppError } from './utils/AppError';
@@ -25,6 +26,7 @@ const app = express();
 app.use(helmet()); // Security Headers
 app.use(cors()); // CORS
 app.use(express.json({ limit: '10kb' })); // Body Parser with size limit
+app.use(cookieParser()); // Cookie Parser (for refresh token)
 app.use(morgan('dev')); // HTTP Logger
 
 // ============================================
