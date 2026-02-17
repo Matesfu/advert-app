@@ -16,6 +16,7 @@ import reviewRoutes from './modules/reviews/review.routes';
 import favoriteRoutes from './modules/favorites/favorite.routes';
 import messageRoutes from './modules/messages/message.routes';
 import categoryRoutes from './modules/categories/category.routes';
+import eventTypeRoutes from './modules/event-types/event-type.routes';
 
 // Initialize App
 const app = express();
@@ -45,6 +46,9 @@ app.use('/api/v1/vendors', vendorRoutes);
 app.use('/api/v1/favorites', favoriteRoutes);
 app.use('/api/v1/messages', messageRoutes);
 app.use('/api/v1/categories', categoryRoutes);
+
+// Admin Module Routes
+app.use('/api/v1/admin/event-types', eventTypeRoutes);
 
 // Nested Routes (Reviews under Vendors)
 app.use('/api/v1/vendors/:vendorId/reviews', reviewRoutes);
