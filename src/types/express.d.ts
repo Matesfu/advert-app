@@ -11,6 +11,7 @@ declare global {
                 id: number;
                 email: string;
                 role: UserRole;
+                authProvider: string;
             };
         }
     }

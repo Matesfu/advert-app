@@ -56,6 +56,7 @@ export const protect = async (
         id: 1,
         email: 'mock@example.com',
         role: 'CUSTOMER' as UserRole,
+        authProvider: 'local',
     };
 
     logger.info(`Protected route accessed by user: ${req.user.email}`);

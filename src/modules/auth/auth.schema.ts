@@ -53,7 +53,25 @@ export const changePasswordSchema = z.object({
         ),
 });
 
+/**
+ * Schema for resending verification email.
+ */
+export const resendVerificationSchema = z.object({
+    email: z
+        .string({ required_error: 'Email is required' })
+        .email('Invalid email format'),
+});
+
+/**
+ * Schema for email verification query (token).
+ */
+export const verifyEmailQuerySchema = z.object({
+    token: z.string().min(1, 'Verification token is required'),
+});
+
 // Type exports for use in services and controllers
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
+export type VerifyEmailQuery = z.infer<typeof verifyEmailQuerySchema>;
