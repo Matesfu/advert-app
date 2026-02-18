@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
 /**
+ * Maximum number of portfolio images allowed per vendor profile.
+ */
+export const MAX_PORTFOLIO_IMAGES = 10;
+
+/**
  * Schema for route ID parameters.
  */
 export const idParamSchema = z.object({
@@ -44,6 +49,7 @@ export const createVendorSchema = z.object({
         .min(2, 'City must be at least 2 characters'),
     portfolioImages: z
         .array(z.string().url('Each portfolio image must be a valid URL'))
+        .max(MAX_PORTFOLIO_IMAGES, `Portfolio images cannot exceed ${MAX_PORTFOLIO_IMAGES}`)
         .optional()
         .default([]),
     locationCoordinates: z
@@ -52,12 +58,36 @@ export const createVendorSchema = z.object({
             lng: z.number().min(-180).max(180),
         })
         .optional(),
+    serviceCategoryId: z
+        .number({ required_error: 'Service category ID is required' })
+        .int()
+        .positive('Service category ID must be a positive integer'),
 });
 
 /**
  * Schema for updating a vendor profile (all fields optional).
+ * Note: portfolioImages is excluded — use the dedicated image management endpoint.
  */
-export const updateVendorSchema = createVendorSchema.partial();
+export const updateVendorSchema = createVendorSchema
+    .omit({ portfolioImages: true })
+    .partial();
+
+/**
+ * Schema for managing portfolio images (add/remove).
+ * At least one of `add` or `remove` must be provided.
+ */
+export const updatePortfolioImagesSchema = z
+    .object({
+        add: z
+            .array(z.string().url('Each image must be a valid URL'))
+            .optional(),
+        remove: z
+            .array(z.string().url('Each image must be a valid URL'))
+            .optional(),
+    })
+    .refine((data) => data.add || data.remove, {
+        message: 'At least one of "add" or "remove" must be provided',
+    });
 
 /**
  * Schema for creating a service under a vendor profile.
@@ -74,10 +104,6 @@ export const createServiceSchema = z.object({
     price: z
         .number({ required_error: 'Price is required' })
         .positive('Price must be a positive number'),
-    serviceCategoryId: z
-        .number({ required_error: 'Service category is required' })
-        .int()
-        .positive(),
 });
 
 /**
@@ -107,6 +133,9 @@ export const listVendorsQuerySchema = z.object({
         .regex(/^\d+(\.\d+)?$/)
         .transform((val) => parseFloat(val))
         .optional(),
+    search: z.string().optional(),
+    sortBy: z.enum(['createdAt', 'basePrice']).optional().default('createdAt'),
+    sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 
 // Type exports
@@ -116,3 +145,4 @@ export type CreateVendorInput = z.infer<typeof createVendorSchema>;
 export type UpdateVendorInput = z.infer<typeof updateVendorSchema>;
 export type CreateServiceInput = z.infer<typeof createServiceSchema>;
 export type ListVendorsQuery = z.infer<typeof listVendorsQuerySchema>;
+export type UpdatePortfolioImagesInput = z.infer<typeof updatePortfolioImagesSchema>;

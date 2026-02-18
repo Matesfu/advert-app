@@ -38,6 +38,12 @@ const envSchema = z.object({
 
     // Cookie
     COOKIE_DOMAIN: z.string().optional(),
+
+    // Feature Flags
+    VENDOR_ROLE_ENFORCED: z
+        .enum(['true', 'false'])
+        .default('false')
+        .transform((val) => val === 'true'),
 });
 
 // Validate process.env

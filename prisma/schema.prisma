@@ -95,6 +95,9 @@ model VendorProfile {
   userId              Int
   owner               User     @relation(fields: [userId], references: [id])
 
+  serviceCategoryId   Int
+  serviceCategory     ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+
   // Relationships
   legalDocuments      LegalDocument[]
   reviews             Review[]
@@ -106,6 +109,9 @@ model VendorProfile {
 
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?                    // Soft-delete timestamp
+
+  @@unique([userId, serviceCategoryId]) // One profile per category per user
 }
 
 // 3. Legal Documents (Compliance)
@@ -146,8 +152,8 @@ model ServiceCategory {
   // Many-to-Many with EventType (Explicit Bridge)
   eventTypes EventTypeServiceCategory[]
 
-  // Services that belong to this category
-  services   Service[]
+  // Vendor profiles in this category
+  vendorProfiles  VendorProfile[]
 }
 
 // Explicit Bridge Table
@@ -172,9 +178,6 @@ model Service {
   // Foreign Keys
   vendorProfileId   Int
   vendorProfile     VendorProfile   @relation(fields: [vendorProfileId], references: [id])
-  
-  serviceCategoryId Int
-  serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
 }
 
 // 6. Social Proof: Reviews

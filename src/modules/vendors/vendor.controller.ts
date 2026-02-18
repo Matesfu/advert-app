@@ -9,6 +9,7 @@ import type {
     UpdateVendorInput,
     CreateServiceInput,
     ListVendorsQuery,
+    UpdatePortfolioImagesInput,
 } from './vendor.schema';
 
 /**
@@ -63,11 +64,12 @@ export const getVendorById = async (req: Request, res: Response): Promise<void> 
  */
 export const createVendor = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id;
+    const userRole = req.user!.role;
     const data = req.body as CreateVendorInput;
 
     logger.info(`[VendorController] Create vendor request by user ID: ${userId}`);
 
-    const vendor = await vendorService.create(userId, data);
+    const vendor = await vendorService.create(userId, userRole, data);
 
     logger.info(`[VendorController] Vendor created successfully: ${vendor.id}`);
 
@@ -81,12 +83,13 @@ export const createVendor = async (req: Request, res: Response): Promise<void> =
  */
 export const updateVendor = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id;
+    const userRole = req.user!.role;
     const { id } = req.params as unknown as IdParam;
     const data = req.body as UpdateVendorInput;
 
     logger.info(`[VendorController] Update vendor ID: ${id} by user ID: ${userId}`);
 
-    const vendor = await vendorService.update(id, userId, data);
+    const vendor = await vendorService.update(id, userId, userRole, data);
 
     logger.info(`[VendorController] Vendor updated successfully: ${vendor.id}`);
 
@@ -100,15 +103,39 @@ export const updateVendor = async (req: Request, res: Response): Promise<void> =
  */
 export const deleteVendor = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.id;
+    const userRole = req.user!.role;
     const { id } = req.params as unknown as IdParam;
 
     logger.info(`[VendorController] Delete vendor ID: ${id} by user ID: ${userId}`);
 
-    await vendorService.delete(id, userId);
+    await vendorService.delete(id, userId, userRole);
 
     logger.info(`[VendorController] Vendor deleted successfully: ${id}`);
 
     sendNoContent(res);
+};
+
+// ============================================
+// PORTFOLIO IMAGE MANAGEMENT
+// ============================================
+
+/**
+ * @route   PATCH /api/v1/vendors/:id/images
+ * @desc    Add/remove portfolio images
+ * @access  Private (Owner only)
+ */
+export const updatePortfolioImages = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.id;
+    const { id } = req.params as unknown as IdParam;
+    const data = req.body as UpdatePortfolioImagesInput;
+
+    logger.info(`[VendorController] Update portfolio images for vendor ID: ${id} by user ID: ${userId}`);
+
+    const vendor = await vendorService.updatePortfolioImages(id, userId, data);
+
+    logger.info(`[VendorController] Portfolio images updated for vendor ID: ${id}`);
+
+    sendSuccess(res, { vendor }, 200, 'Portfolio images updated successfully');
 };
 
 // ============================================

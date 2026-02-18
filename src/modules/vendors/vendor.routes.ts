@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import * as vendorController from './vendor.controller';
 import { validateRequest } from '../../middlewares/validate.middleware';
-import { protect, restrictTo } from '../../middlewares/auth.middleware';
+import { protect } from '../../middlewares/auth.middleware';
 import {
     idParamSchema,
     serviceIdParamSchema,
@@ -9,6 +9,7 @@ import {
     updateVendorSchema,
     createServiceSchema,
     listVendorsQuerySchema,
+    updatePortfolioImagesSchema,
 } from './vendor.schema';
 
 const router = Router();
@@ -67,7 +68,6 @@ router.get(
 router.post(
     '/',
     protect,
-    restrictTo('VENDOR', 'ADMIN'),
     validateRequest(createVendorSchema),
     vendorController.createVendor
 );
@@ -95,6 +95,23 @@ router.delete(
     protect,
     validateRequest(idParamSchema, 'params'),
     vendorController.deleteVendor
+);
+
+// ============================================
+// PORTFOLIO IMAGE MANAGEMENT
+// ============================================
+
+/**
+ * @route   PATCH /api/v1/vendors/:id/images
+ * @desc    Add/remove portfolio images (granular management)
+ * @access  Private (Owner only)
+ */
+router.patch(
+    '/:id/images',
+    protect,
+    validateRequest(idParamSchema, 'params'),
+    validateRequest(updatePortfolioImagesSchema),
+    vendorController.updatePortfolioImages
 );
 
 // ============================================

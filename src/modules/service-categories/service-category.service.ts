@@ -111,7 +111,7 @@ class ServiceCategoryService {
                 take: limit,
                 orderBy: { [sortBy]: order },
                 include: {
-                    _count: { select: { eventTypes: true, services: true } },
+                    _count: { select: { eventTypes: true, vendorProfiles: true } },
                     ...this.includeEventTypes,
                 },
             }),
@@ -137,7 +137,7 @@ class ServiceCategoryService {
         const serviceCategory = await prisma.serviceCategory.findUnique({
             where: { id },
             include: {
-                _count: { select: { eventTypes: true, services: true } },
+                _count: { select: { eventTypes: true, vendorProfiles: true } },
                 ...this.includeEventTypes,
             },
         });
@@ -195,7 +195,7 @@ class ServiceCategoryService {
             where: { id },
             data: updateData,
             include: {
-                _count: { select: { eventTypes: true, services: true } },
+                _count: { select: { eventTypes: true, vendorProfiles: true } },
                 ...this.includeEventTypes,
             },
         });
@@ -212,7 +212,7 @@ class ServiceCategoryService {
         const existing = await prisma.serviceCategory.findUnique({
             where: { id },
             include: {
-                _count: { select: { services: true, eventTypes: true } },
+                _count: { select: { vendorProfiles: true, eventTypes: true } },
             },
         });
 
@@ -221,9 +221,9 @@ class ServiceCategoryService {
         }
 
         // Guard: prevent deletion when services are still linked
-        if (existing._count.services > 0) {
+        if (existing._count.vendorProfiles > 0) {
             throw new AppError(
-                `Cannot delete: ${existing._count.services} service(s) still reference this category. Reassign or remove them first.`,
+                `Cannot delete: ${existing._count.vendorProfiles} vendor profile(s) still reference this category. Reassign or remove them first.`,
                 409
             );
         }

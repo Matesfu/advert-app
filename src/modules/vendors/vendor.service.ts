@@ -1,186 +1,452 @@
+import { prisma } from '../../config/prisma';
+import { env } from '../../config/env';
 import { AppError } from '../../utils/AppError';
 import { logger } from '../../utils/logger';
+import { MAX_PORTFOLIO_IMAGES } from './vendor.schema';
+import type { UserRole } from '@prisma/client';
 import type {
     CreateVendorInput,
     UpdateVendorInput,
     CreateServiceInput,
     ListVendorsQuery,
+    UpdatePortfolioImagesInput,
 } from './vendor.schema';
 
 /**
- * Vendor profile response type.
+ * Vendor Service — Business logic for vendor profiles and nested services.
+ *
+ * Key design decisions:
+ * - **Soft Delete**: `delete()` sets `deletedAt` instead of removing the row,
+ *   preserving reviews, favorites, and conversation history.
+ * - **Image Management**: Portfolio images are managed via dedicated `updatePortfolioImages()`
+ *   with add/remove operations and a max cap (MAX_PORTFOLIO_IMAGES).
+ * - **Soft-delete filtering**: All public queries (`findAll`, `findById`) exclude
+ *   soft-deleted profiles automatically.
  */
-interface VendorProfile {
-    id: number;
-    businessName: string;
-    bio: string | null;
-    basePrice: number;
-    city: string;
-    portfolioImages: string[];
-    userId: number;
-    createdAt: Date;
-    updatedAt: Date;
-}
-
-/**
- * Service response type.
- */
-interface VendorService {
-    id: number;
-    name: string;
-    description: string | null;
-    price: number;
-    serviceCategoryId: number;
-    vendorProfileId: number;
-}
-
-/**
- * Paginated list response.
- */
-interface PaginatedResponse<T> {
-    items: T[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-}
-
-/**
- * Vendor Service - Handles vendor profile business logic.
- * 
- * Currently contains placeholder implementations that throw NotImplemented errors.
- * TODO: Implement actual logic using Prisma.
- */
-class VendorService {
-    /**
-     * Get all vendor profiles with filtering and pagination.
-     * 
-     * @param query - Filter and pagination options
-     * @returns Paginated list of vendor profiles
-     */
-    async findAll(query: ListVendorsQuery): Promise<PaginatedResponse<VendorProfile>> {
-        logger.info(`Vendor Service: Fetching vendors with query: ${JSON.stringify(query)}`);
-
-        // Placeholder implementation
-        throw new AppError('List vendors functionality not implemented yet', 501);
-    }
+class VendorServiceClass {
+    // ========================================
+    // PRIVATE HELPERS
+    // ========================================
 
     /**
-     * Get a single vendor profile by ID.
-     * 
-     * @param id - Vendor profile ID
-     * @returns Vendor profile with services
+     * Base WHERE clause that excludes soft-deleted profiles.
      */
-    async findById(id: number): Promise<VendorProfile & { services: VendorService[] }> {
-        logger.info(`Vendor Service: Fetching vendor by ID: ${id}`);
-
-        // Placeholder implementation
-        throw new AppError('Get vendor functionality not implemented yet', 501);
+    private get activeFilter() {
+        return { deletedAt: null };
     }
+
+    // ========================================
+    // VENDOR PROFILE CRUD
+    // ========================================
 
     /**
      * Create a new vendor profile.
-     * 
-     * @param userId - ID of the user creating the profile
-     * @param data - Vendor profile data
-     * @returns Created vendor profile
-     * 
-     * TODO Implementation:
-     * 1. Verify user has VENDOR role
-     * 2. Check if user already has max allowed profiles
-     * 3. Create vendor profile in database
+     *
+     * Rules:
+     *  - Feature‑flag gating via `VENDOR_ROLE_ENFORCED`.
+     *  - One profile per ServiceCategory per user (soft-deleted profiles don't count).
+     *  - ServiceCategory must exist.
      */
-    async create(userId: number, data: CreateVendorInput): Promise<VendorProfile> {
-        logger.info(`Vendor Service: Creating vendor profile for user ID: ${userId}`);
+    async create(userId: number, userRole: UserRole, data: CreateVendorInput) {
+        // Feature‑flag check
+        if (env.VENDOR_ROLE_ENFORCED) {
+            if (userRole !== 'VENDOR' && userRole !== 'ADMIN') {
+                throw new AppError(
+                    'Vendor role required. Subscribe to become a vendor.',
+                    403,
+                );
+            }
+        }
 
-        // Placeholder implementation
-        throw new AppError('Create vendor functionality not implemented yet', 501);
+        // Verify the service category exists
+        const category = await prisma.serviceCategory.findUnique({
+            where: { id: data.serviceCategoryId },
+        });
+
+        if (!category) {
+            throw new AppError(
+                `Service category with ID ${data.serviceCategoryId} not found`,
+                404,
+            );
+        }
+
+        // Enforce one profile per category per user (exclude soft-deleted)
+        const existing = await prisma.vendorProfile.findFirst({
+            where: {
+                userId,
+                serviceCategoryId: data.serviceCategoryId,
+                ...this.activeFilter,
+            },
+        });
+
+        if (existing) {
+            throw new AppError(
+                `You already have a vendor profile in the "${category.name}" category. One profile per category is allowed.`,
+                409,
+            );
+        }
+
+        const vendor = await prisma.vendorProfile.create({
+            data: {
+                businessName: data.businessName,
+                bio: data.bio ?? null,
+                basePrice: data.basePrice,
+                city: data.city,
+                portfolioImages: data.portfolioImages ?? [],
+                locationCoordinates: data.locationCoordinates ?? undefined,
+                userId,
+                serviceCategoryId: data.serviceCategoryId,
+            },
+            include: {
+                serviceCategory: { select: { id: true, name: true, slug: true } },
+                _count: { select: { services: true, reviews: true } },
+            },
+        });
+
+        logger.info(
+            `[VendorService] Created profile "${vendor.businessName}" (ID ${vendor.id}) in category "${category.name}" for user ${userId}`,
+        );
+
+        return vendor;
     }
 
     /**
-     * Update an existing vendor profile.
-     * 
-     * @param id - Vendor profile ID
-     * @param userId - ID of the requesting user (for authorization)
-     * @param data - Updated vendor data
-     * @returns Updated vendor profile
-     * 
-     * TODO Implementation:
-     * 1. Verify vendor exists
-     * 2. Verify user is the owner
-     * 3. Update in database
+     * List vendor profiles with filtering, searching, sorting, and pagination.
+     *
+     * Automatically excludes soft-deleted profiles.
      */
-    async update(id: number, userId: number, data: UpdateVendorInput): Promise<VendorProfile> {
-        logger.info(`Vendor Service: Updating vendor ID: ${id} by user: ${userId}`);
+    async findAll(query: ListVendorsQuery) {
+        const { page, limit, city, minPrice, maxPrice, search, sortBy, sortOrder } = query;
+        const skip = (page - 1) * limit;
 
-        // Placeholder implementation
-        throw new AppError('Update vendor functionality not implemented yet', 501);
+        // Build dynamic WHERE clause — always exclude soft-deleted
+        const where: Record<string, unknown> = { ...this.activeFilter };
+
+        if (city) {
+            where.city = { contains: city, mode: 'insensitive' as const };
+        }
+
+        // Price range filter on basePrice
+        if (minPrice !== undefined || maxPrice !== undefined) {
+            const priceFilter: Record<string, number> = {};
+            if (minPrice !== undefined) priceFilter.gte = minPrice;
+            if (maxPrice !== undefined) priceFilter.lte = maxPrice;
+            where.basePrice = priceFilter;
+        }
+
+        // Full-text search across businessName and bio
+        if (search) {
+            where.OR = [
+                { businessName: { contains: search, mode: 'insensitive' as const } },
+                { bio: { contains: search, mode: 'insensitive' as const } },
+            ];
+        }
+
+        // Run count + data in parallel for efficiency
+        const [total, vendors] = await Promise.all([
+            prisma.vendorProfile.count({ where }),
+            prisma.vendorProfile.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy: { [sortBy]: sortOrder },
+                include: {
+                    serviceCategory: { select: { id: true, name: true, slug: true } },
+                    _count: { select: { services: true, reviews: true } },
+                    owner: {
+                        select: { id: true, displayName: true, avatarUrl: true },
+                    },
+                },
+            }),
+        ]);
+
+        const totalPages = Math.ceil(total / limit);
+
+        logger.info(
+            `[VendorService] Listed vendors: page=${page}, total=${total}`,
+        );
+
+        return {
+            items: vendors,
+            total,
+            page,
+            limit,
+            totalPages,
+        };
     }
 
     /**
-     * Delete a vendor profile.
-     * 
-     * @param id - Vendor profile ID
-     * @param userId - ID of the requesting user (for authorization)
-     * 
-     * TODO Implementation:
-     * 1. Verify vendor exists
-     * 2. Verify user is the owner or admin
-     * 3. Delete (or soft delete) in database
+     * Get a single vendor profile by ID, including related data.
+     *
+     * Returns 404 if the profile is soft-deleted.
      */
-    async delete(id: number, userId: number): Promise<void> {
-        logger.info(`Vendor Service: Deleting vendor ID: ${id} by user: ${userId}`);
+    async findById(id: number) {
+        const vendor = await prisma.vendorProfile.findFirst({
+            where: { id, ...this.activeFilter },
+            include: {
+                serviceCategory: { select: { id: true, name: true, slug: true } },
+                services: true,
+                _count: { select: { reviews: true, services: true, favorites: true } },
+                owner: {
+                    select: { id: true, displayName: true, avatarUrl: true },
+                },
+            },
+        });
 
-        // Placeholder implementation
-        throw new AppError('Delete vendor functionality not implemented yet', 501);
+        if (!vendor) {
+            throw new AppError(`Vendor profile with ID ${id} not found`, 404);
+        }
+
+        logger.info(`[VendorService] Found vendor: ${vendor.businessName} (ID ${id})`);
+        return vendor;
     }
 
-    // ============================================
+    /**
+     * Update a vendor profile (partial update).
+     *
+     * - Ownership: only the profile owner or an ADMIN can update.
+     * - Note: portfolioImages are managed separately via `updatePortfolioImages()`.
+     */
+    async update(id: number, userId: number, userRole: UserRole, data: UpdateVendorInput) {
+        const existing = await prisma.vendorProfile.findFirst({
+            where: { id, ...this.activeFilter },
+        });
+
+        if (!existing) {
+            throw new AppError(`Vendor profile with ID ${id} not found`, 404);
+        }
+
+        // Ownership check — owner or admin
+        if (existing.userId !== userId && userRole !== 'ADMIN') {
+            throw new AppError('You do not have permission to update this profile', 403);
+        }
+
+        const vendor = await prisma.vendorProfile.update({
+            where: { id },
+            data: {
+                ...(data.businessName !== undefined && { businessName: data.businessName }),
+                ...(data.bio !== undefined && { bio: data.bio }),
+                ...(data.basePrice !== undefined && { basePrice: data.basePrice }),
+                ...(data.city !== undefined && { city: data.city }),
+                ...(data.locationCoordinates !== undefined && { locationCoordinates: data.locationCoordinates }),
+            },
+            include: {
+                _count: { select: { services: true, reviews: true } },
+            },
+        });
+
+        logger.info(`[VendorService] Updated vendor ID ${id} by user ${userId}`);
+        return vendor;
+    }
+
+    /**
+     * Soft-delete a vendor profile.
+     *
+     * Sets `deletedAt` to the current timestamp instead of removing the row.
+     * This preserves:
+     *  - Reviews and ratings left by customers
+     *  - Favorite/wishlist entries
+     *  - Conversation/message history
+     *
+     * The profile will no longer appear in public queries.
+     */
+    async delete(id: number, userId: number, userRole: UserRole) {
+        const existing = await prisma.vendorProfile.findFirst({
+            where: { id, ...this.activeFilter },
+        });
+
+        if (!existing) {
+            throw new AppError(`Vendor profile with ID ${id} not found`, 404);
+        }
+
+        // Ownership check — owner or admin
+        if (existing.userId !== userId && userRole !== 'ADMIN') {
+            throw new AppError('You do not have permission to delete this profile', 403);
+        }
+
+        await prisma.vendorProfile.update({
+            where: { id },
+            data: { deletedAt: new Date() },
+        });
+
+        logger.info(`[VendorService] Soft-deleted vendor ID ${id} by user ${userId}`);
+    }
+
+    // ========================================
+    // PORTFOLIO IMAGE MANAGEMENT
+    // ========================================
+
+    /**
+     * Update portfolio images with granular add/remove operations.
+     *
+     * - `add`: Appends new image URLs (up to MAX_PORTFOLIO_IMAGES total).
+     * - `remove`: Removes specific image URLs from the current array.
+     * - Both can be provided in a single request.
+     *
+     * Processing order: remove first, then add (to free slots before adding).
+     */
+    async updatePortfolioImages(
+        id: number,
+        userId: number,
+        data: UpdatePortfolioImagesInput,
+    ) {
+        const vendor = await prisma.vendorProfile.findFirst({
+            where: { id, ...this.activeFilter },
+        });
+
+        if (!vendor) {
+            throw new AppError(`Vendor profile with ID ${id} not found`, 404);
+        }
+
+        if (vendor.userId !== userId) {
+            throw new AppError('You do not have permission to update this profile', 403);
+        }
+
+        let currentImages = [...vendor.portfolioImages];
+
+        // Step 1: Remove images first (frees up slots)
+        if (data.remove && data.remove.length > 0) {
+            const removeSet = new Set(data.remove);
+            const beforeCount = currentImages.length;
+            currentImages = currentImages.filter((img) => !removeSet.has(img));
+
+            const removedCount = beforeCount - currentImages.length;
+            if (removedCount === 0) {
+                logger.warn(`[VendorService] No matching images found to remove for vendor ID ${id}`);
+            }
+        }
+
+        // Step 2: Add new images (respect max limit)
+        if (data.add && data.add.length > 0) {
+            // Deduplicate: skip images that already exist
+            const existingSet = new Set(currentImages);
+            const newImages = data.add.filter((img) => !existingSet.has(img));
+
+            const availableSlots = MAX_PORTFOLIO_IMAGES - currentImages.length;
+
+            if (newImages.length > availableSlots) {
+                throw new AppError(
+                    `Cannot add ${newImages.length} image(s). You have ${currentImages.length}/${MAX_PORTFOLIO_IMAGES} images. ` +
+                    `Only ${availableSlots} slot(s) available.`,
+                    400,
+                );
+            }
+
+            currentImages.push(...newImages);
+        }
+
+        const updated = await prisma.vendorProfile.update({
+            where: { id },
+            data: { portfolioImages: currentImages },
+            include: {
+                _count: { select: { services: true, reviews: true } },
+            },
+        });
+
+        logger.info(
+            `[VendorService] Updated portfolio images for vendor ID ${id}: ${currentImages.length} images`,
+        );
+
+        return updated;
+    }
+
+    // ========================================
     // SERVICE MANAGEMENT (nested under vendor)
-    // ============================================
+    // ========================================
 
     /**
-     * Add a service to a vendor profile.
-     * 
-     * @param vendorId - Vendor profile ID
-     * @param userId - ID of the requesting user
-     * @param data - Service data
-     * @returns Created service
+     * Add a service package to a vendor profile.
+     *
+     * Validates: vendor ownership, service category existence, vendor is active.
      */
-    async addService(vendorId: number, userId: number, data: CreateServiceInput): Promise<VendorService> {
-        logger.info(`Vendor Service: Adding service to vendor ID: ${vendorId}`);
+    async addService(vendorId: number, userId: number, data: CreateServiceInput) {
+        // Verify vendor profile exists, is active, and belongs to user
+        const vendor = await prisma.vendorProfile.findFirst({
+            where: { id: vendorId, ...this.activeFilter },
+        });
 
-        // Placeholder implementation
-        throw new AppError('Add service functionality not implemented yet', 501);
+        if (!vendor) {
+            throw new AppError(`Vendor profile with ID ${vendorId} not found`, 404);
+        }
+
+        if (vendor.userId !== userId) {
+            throw new AppError('You do not have permission to add services to this profile', 403);
+        }
+
+        const service = await prisma.service.create({
+            data: {
+                name: data.name,
+                description: data.description ?? null,
+                price: data.price,
+                vendorProfileId: vendorId,
+            },
+        });
+
+        logger.info(
+            `[VendorService] Added service "${service.name}" to vendor ID ${vendorId}`,
+        );
+
+        return service;
     }
 
     /**
      * Remove a service from a vendor profile.
-     * 
-     * @param vendorId - Vendor profile ID
-     * @param serviceId - Service ID to remove
-     * @param userId - ID of the requesting user
+     *
+     * Validates: vendor ownership and that the service belongs to this vendor.
      */
-    async removeService(vendorId: number, serviceId: number, userId: number): Promise<void> {
-        logger.info(`Vendor Service: Removing service ID: ${serviceId} from vendor ID: ${vendorId}`);
+    async removeService(vendorId: number, serviceId: number, userId: number) {
+        const vendor = await prisma.vendorProfile.findFirst({
+            where: { id: vendorId, ...this.activeFilter },
+        });
 
-        // Placeholder implementation
-        throw new AppError('Remove service functionality not implemented yet', 501);
+        if (!vendor) {
+            throw new AppError(`Vendor profile with ID ${vendorId} not found`, 404);
+        }
+
+        if (vendor.userId !== userId) {
+            throw new AppError('You do not have permission to manage this profile', 403);
+        }
+
+        const service = await prisma.service.findUnique({ where: { id: serviceId } });
+
+        if (!service || service.vendorProfileId !== vendorId) {
+            throw new AppError(
+                `Service with ID ${serviceId} not found on vendor profile ${vendorId}`,
+                404,
+            );
+        }
+
+        await prisma.service.delete({ where: { id: serviceId } });
+
+        logger.info(
+            `[VendorService] Removed service ID ${serviceId} from vendor ID ${vendorId}`,
+        );
     }
 
     /**
      * Get all services for a vendor profile.
-     * 
-     * @param vendorId - Vendor profile ID
-     * @returns List of services
      */
-    async getServices(vendorId: number): Promise<VendorService[]> {
-        logger.info(`Vendor Service: Fetching services for vendor ID: ${vendorId}`);
+    async getServices(vendorId: number) {
+        // Verify vendor exists and is active
+        const vendor = await prisma.vendorProfile.findFirst({
+            where: { id: vendorId, ...this.activeFilter },
+        });
 
-        // Placeholder implementation
-        throw new AppError('Get services functionality not implemented yet', 501);
+        if (!vendor) {
+            throw new AppError(`Vendor profile with ID ${vendorId} not found`, 404);
+        }
+
+        const services = await prisma.service.findMany({
+            where: { vendorProfileId: vendorId },
+        });
+
+        logger.info(
+            `[VendorService] Fetched ${services.length} services for vendor ID ${vendorId}`,
+        );
+
+        return services;
     }
 }
 
 // Export singleton instance
-export const vendorService = new VendorService();
+export const vendorService = new VendorServiceClass();

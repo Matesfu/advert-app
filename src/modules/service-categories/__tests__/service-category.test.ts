@@ -431,6 +431,7 @@ describe('ServiceCategory API – E2E', () => {
                     businessName: 'Vendor Biz',
                     city: 'Test City',
                     basePrice: 100.0,
+                    serviceCategoryId: cat.id,
                 },
             });
 
@@ -439,7 +440,6 @@ describe('ServiceCategory API – E2E', () => {
                 data: {
                     name: 'Test Service',
                     price: 100,
-                    serviceCategoryId: cat.id,
                     vendorProfileId: vendorProfile.id,
                 },
             });

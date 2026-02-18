@@ -12,6 +12,19 @@ The **VendorProfile** module is the core of the multi-vendor system, allowing us
 - **Service Management**: Vendors can list multiple services (packages) under their profile.
 - **Role Enforcement (Feature Flag)**: Control who can create profiles (anyone vs. VENDOR role) via `.env`.
 - **Search & Discovery**: Public API to search vendors by city, price, and category.
+- **Data Preservation (Soft Delete)**: Deleting a profile preserves reviews, favorites, and conversations.
+- **Granular Image Management**: Add/remove portfolio images individually with a max limit.
+
+### Key Design Constraints
+
+> [!IMPORTANT]
+> **One Profile Per Category Per User**: A user can own multiple `VendorProfile` records, but only **one per `ServiceCategory`**. This is enforced at both the application level (service layer check) and the database level (`@@unique([userId, serviceCategoryId])` constraint).
+
+> [!IMPORTANT]
+> **Service Depends ONLY on VendorProfile**: The `Service` model has no direct relationship to `ServiceCategory`. A service inherits its category implicitly through the parent `VendorProfile.serviceCategoryId`. This means:
+> - A vendor **cannot** offer services across multiple categories from one profile.
+> - The `createServiceSchema` has no `serviceCategoryId` field.
+> - Services are always scoped to the vendor profile they belong to.
 
 ---
 
@@ -25,25 +38,39 @@ erDiagram
     VendorProfile ||--o{ Service : "offers (1:N)"
     VendorProfile ||--o{ Review : "has (0:N)"
     VendorProfile ||--o{ Favorite : "saved by (0:N)"
-    Service }o--|| ServiceCategory : "belongs to"
+    VendorProfile }o--|| ServiceCategory : "belongs to (1 per user)"
 
     VendorProfile {
         int id PK
         string businessName
         string city
         decimal basePrice "Starting at..."
-        string[] portfolioImages
+        string[] portfolioImages "Max 10 images"
+        datetime deletedAt "Soft delete timestamp"
         int userId FK
+        int serviceCategoryId FK "Links profile to a specific category"
     }
 
     Service {
         int id PK
         string name
+        string description
         decimal price
-        int vendorProfileId FK
-        int serviceCategoryId FK
+        int vendorProfileId FK "ONLY depends on VendorProfile"
+    }
+
+    User {
+        int id PK
+    }
+
+    ServiceCategory {
+        int id PK
+        string name
     }
 ```
+
+> [!NOTE]
+> **Unique Constraint**: `@@unique([userId, serviceCategoryId])` on `VendorProfile` enforces one profile per category per user at the database level. Soft-deleted profiles (non-null `deletedAt`) are still counted by this constraint, so re-creating in the same category requires the old profile to be hard-deleted or a different approach.
 
 ### Feature Flag Logic (Role Enforcement)
 
@@ -56,11 +83,14 @@ flowchart TD
     Ctrl --> Svc[Service Layer]
     Svc --> Check{Enforce VENDOR Role?}
     
-    Check -- No (Launch Mode) --> Create[Create Profile]
+    Check -- No (Launch Mode) --> UniqueCheck
     Check -- Yes (Monetized) --> RoleCheck{User Role == VENDOR?}
     
-    RoleCheck -- Yes --> Create
+    RoleCheck -- Yes --> UniqueCheck
     RoleCheck -- No --> Error[403 Forbidden]
+    
+    UniqueCheck{Profile exists in category?} -- No --> Create[Create Profile]
+    UniqueCheck -- Yes --> Conflict[409 Conflict]
 ```
 
 ---
@@ -68,15 +98,28 @@ flowchart TD
 ## 3. Implementation Roadmap
 
 ### Phase 1: Configuration & Setup
-- [ ] **Environment Variables**: Add `VENDOR_ROLE_ENFORCED` to `.env`.
-- [ ] **Validation Schemas**: Refine Zod schemas in `vendor.schema.ts` for search and sort operations.
+- [x] **Environment Variables**: Add `VENDOR_ROLE_ENFORCED` to `.env`.
+- [x] **Validation Schemas**: Refine Zod schemas in `vendor.schema.ts` for search and sort operations.
 
 ### Phase 2: Core Service Logic (`vendor.service.ts`)
-- [ ] **`create`**: Implement profile creation with the feature flag check.
-- [ ] **`findAll`**: Implement pagination, filtering (city, price), and sorting.
-- [ ] **`findById`**: Fetch profile with relations (`services`, `reviews` count).
-- [ ] **`update`**: Implement partial updates with strict ownership checks.
-- [ ] **`delete`**: Implement deletion with ownership checks.
+- [x] **`create`**: Implement profile creation with the feature flag check.
+- [x] **`findAll`**: Implement pagination, filtering (city, price), and sorting.
+- [x] **`findById`**: Fetch profile with relations (`services`, `reviews` count).
+- [x] **`update`**: Implement partial updates with strict ownership checks.
+- [x] **`delete`**: Implement soft deletion (sets `deletedAt`) with ownership checks.
+
+### Phase 2b: Soft Delete & Image Management
+- [x] **Soft Delete**: Add `deletedAt` field to `VendorProfile` Prisma schema.
+- [x] **Active Filter**: Exclude soft-deleted profiles from all public queries (`findAll`, `findById`).
+- [x] **Image Schema**: Add `updatePortfolioImagesSchema` (add/remove operations) and `MAX_PORTFOLIO_IMAGES` constant.
+- [x] **`updatePortfolioImages`**: Granular add/remove with deduplication and max limit enforcement.
+- [x] **Route**: `PATCH /vendors/:id/images` endpoint for image management.
+- [x] **Remove `portfolioImages` from `updateVendorSchema`**: Images managed only via dedicated endpoint.
+
+### Phase 2c: Data Integrity & Schema Alignment
+- [x] **DB Unique Constraint**: Add `@@unique([userId, serviceCategoryId])` to `VendorProfile` in `schema.prisma`.
+- [x] **Decouple Service from ServiceCategory**: Removed `serviceCategoryId` from `createServiceSchema` — services inherit category from VendorProfile.
+- [x] **Service Model**: Confirmed `Service` model has no direct FK to `ServiceCategory` in Prisma schema.
 
 ### Phase 3: Service Management (Nested Resources)
 - [ ] **`addService`**: Logic to add a service package to a vendor profile.
@@ -103,7 +146,8 @@ flowchart TD
 | **GET** | `/api/v1/vendors/:id` | Public | `getVendorById` | `findById(id)` | Get detailed profile + services |
 | **POST** | `/api/v1/vendors` | Auth | `createVendor` | `create(userId, role, data)` | Create new profile (Role gated via env) |
 | **PATCH** | `/api/v1/vendors/:id` | Owner | `updateVendor` | `update(id, userId, data)` | Update profile details |
-| **DELETE**| `/api/v1/vendors/:id` | Owner/Admin | `deleteVendor` | `delete(id, userId)` | Delete profile |
+| **DELETE**| `/api/v1/vendors/:id` | Owner/Admin | `deleteVendor` | `delete(id, userId)` | Soft-delete profile (sets `deletedAt`) |
+| **PATCH** | `/api/v1/vendors/:id/images` | Owner | `updatePortfolioImages` | `updatePortfolioImages(id, userId, data)` | Add/remove portfolio images |
 | **GET** | `/vendors/:id/services` | Public | `getVendorServices` | `getServices(id)` | List a vendor's services |
 | **POST** | `/vendors/:id/services` | Owner | `addService` | `addService(id, userId, data)` | Add a new service package |
 | **DELETE**| `/vendors/:id/services/:sid`| Owner | `removeService` | `removeService(id, sid, userId)` | Remove a service package |
@@ -115,9 +159,11 @@ flowchart TD
   - Read `process.env.VENDOR_ROLE_ENFORCED`.
   - IF `true` AND `userRole` is NOT `VENDOR` or `ADMIN` -> Throw `403 Forbidden ("Subscription required")`.
 - **Business Logic**:
-  - Check if User already has a profile (optional: enforce 1 profile per user if needed, or allow multiple).
-  - `prisma.vendorProfile.create({ data: { ...data, userId } })`.
-- **Return**: Created profile with standard fields.
+  - One user can create **multiple** vendor profiles, but **only one per ServiceCategory**.
+  - **DB Constraint**: `@@unique([userId, serviceCategoryId])` prevents duplicates at the database level.
+  - **App-level Check**: `findFirst({ userId, serviceCategoryId, deletedAt: null })` provides a user-friendly error message before hitting the DB.
+  - `prisma.vendorProfile.create({ data: { ...data, userId, serviceCategoryId } })`.
+- **Return**: Created profile with standard fields and category details.
 
 #### 2. `findAll(query: ListVendorsQuery)`
 - **Filters**:
@@ -137,8 +183,8 @@ flowchart TD
 #### 4. `addService(vendorId: number, userId: number, data: CreateServiceInput)`
 - **Validation**:
   - Verify `vendorProfile` exists and belongs to `userId`.
-  - Verify `serviceCategoryId` exists in DB.
-- **Create**: `prisma.service.create(...)`.
+  - Service implicitly belongs to the vendor's `serviceCategory` (no `serviceCategoryId` in input).
+- **Create**: `prisma.service.create({ data: { name, description, price, vendorProfileId } })`.
 
 ---
 
@@ -157,8 +203,24 @@ We will create a comprehensive test suite using `supertest`.
 3.  **Feature Flag**:
     - Set `VENDOR_ROLE_ENFORCED=true`, try creating as `CUSTOMER` -> `403`.
     - Set `VENDOR_ROLE_ENFORCED=false`, try creating as `CUSTOMER` -> `201`.
-4.  **Data Integrity**:
+4.  **One Profile Per Category**:
+    - Create a vendor in category A -> `201`.
+    - Create another vendor in category A (same user) -> `409 Conflict`.
+    - Create a vendor in category B (same user) -> `201`.
+5.  **Data Integrity**:
     - Build a profile, add a service, check if it appears in `GET /vendors/:id`.
+    - Services should NOT have a `serviceCategoryId` field.
+6.  **Soft Delete**:
+    - Delete a vendor profile → expect `204`.
+    - `GET /vendors/:id` for deleted profile → expect `404`.
+    - `GET /vendors` should NOT include deleted profiles.
+    - Re-creating a profile after soft delete → expect `201` (slot freed).
+7.  **Portfolio Image Management**:
+    - `PATCH /vendors/:id/images` with `{ add: ["url1"] }` → expect image added.
+    - `PATCH /vendors/:id/images` with `{ remove: ["url1"] }` → expect image removed.
+    - Add images beyond `MAX_PORTFOLIO_IMAGES` (10) → expect `400`.
+    - Add + remove in single request → expect remove-first, then add.
+    - Duplicate images are deduplicated automatically.
 
 ### Manual Verification Steps
 
@@ -171,16 +233,16 @@ We will create a comprehensive test suite using `supertest`.
     curl -X POST http://localhost:8000/api/v1/vendors \
       -H "Authorization: Bearer <YOUR_TOKEN>" \
       -H "Content-Type: application/json" \
-      -d '{"businessName":"Test Vendor", "city":"New York", "basePrice":100}'
+      -d '{"businessName":"Test Vendor", "city":"New York", "basePrice":100, "serviceCategoryId": 1}'
     ```
     - **Expect**: `201 Created`
 
-3.  **Add Service**:
+3.  **Add Service (No serviceCategoryId needed)**:
     ```bash
     curl -X POST http://localhost:8000/api/v1/vendors/<VENDOR_ID>/services \
       -H "Authorization: Bearer <YOUR_TOKEN>" \
       -H "Content-Type: application/json" \
-      -d '{"name":"Gold Package", "price":500, "serviceCategoryId":1}'
+      -d '{"name":"Basic Package", "price":100}'
     ```
     - **Expect**: `201 Created`
 
