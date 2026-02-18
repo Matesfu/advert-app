@@ -111,7 +111,9 @@ model VendorProfile {
   updatedAt           DateTime @updatedAt
   deletedAt           DateTime?                    // Soft-delete timestamp
 
-  @@unique([userId, serviceCategoryId]) // One profile per category per user
+  // NOTE: Uniqueness for (userId, serviceCategoryId) is enforced via a PARTIAL unique index
+  // in a custom migration, so that soft-deleted rows (deletedAt IS NOT NULL) are excluded.
+  // See: prisma/migrations/*_add_vendor_profile_active_unique/migration.sql
 }
 
 // 3. Legal Documents (Compliance)

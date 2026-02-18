@@ -18,7 +18,9 @@ The **VendorProfile** module is the core of the multi-vendor system, allowing us
 ### Key Design Constraints
 
 > [!IMPORTANT]
-> **One Profile Per Category Per User**: A user can own multiple `VendorProfile` records, but only **one per `ServiceCategory`**. This is enforced at both the application level (service layer check) and the database level (`@@unique([userId, serviceCategoryId])` constraint).
+> **One Profile Per Category Per User**: A user can own multiple `VendorProfile` records, but only **one active profile per `ServiceCategory`**. This is enforced at both:
+> - **Application level**: Service layer `findFirst()` check with `deletedAt: null` filter.
+> - **Database level**: A PostgreSQL **partial unique index** on `(userId, serviceCategoryId) WHERE deletedAt IS NULL`. This was chosen over `@@unique` because a standard unique constraint blocks re-creation after soft delete (it counts ALL rows, including soft-deleted ones).
 
 > [!IMPORTANT]
 > **Service Depends ONLY on VendorProfile**: The `Service` model has no direct relationship to `ServiceCategory`. A service inherits its category implicitly through the parent `VendorProfile.serviceCategoryId`. This means:
@@ -70,7 +72,12 @@ erDiagram
 ```
 
 > [!NOTE]
-> **Unique Constraint**: `@@unique([userId, serviceCategoryId])` on `VendorProfile` enforces one profile per category per user at the database level. Soft-deleted profiles (non-null `deletedAt`) are still counted by this constraint, so re-creating in the same category requires the old profile to be hard-deleted or a different approach.
+> **Unique Constraint (Partial Index)**: Instead of `@@unique([userId, serviceCategoryId])`, we use a PostgreSQL **partial unique index** that only applies `WHERE "deletedAt" IS NULL`. This allows:
+> - ✅ One active profile per category per user
+> - ✅ Re-creating a profile in a category after soft-deleting the old one
+> - ✅ Multiple soft-deleted profiles in the same category
+>
+> See: `prisma/migrations/20260218112800_add_vendor_profile_active_unique/migration.sql`
 
 ### Feature Flag Logic (Role Enforcement)
 
@@ -117,7 +124,7 @@ flowchart TD
 - [x] **Remove `portfolioImages` from `updateVendorSchema`**: Images managed only via dedicated endpoint.
 
 ### Phase 2c: Data Integrity & Schema Alignment
-- [x] **DB Unique Constraint**: Add `@@unique([userId, serviceCategoryId])` to `VendorProfile` in `schema.prisma`.
+- [x] **DB Partial Unique Index**: Custom migration with `CREATE UNIQUE INDEX ... WHERE "deletedAt" IS NULL` — replaces `@@unique` to support soft-delete re-creation.
 - [x] **Decouple Service from ServiceCategory**: Removed `serviceCategoryId` from `createServiceSchema` — services inherit category from VendorProfile.
 - [x] **Service Model**: Confirmed `Service` model has no direct FK to `ServiceCategory` in Prisma schema.
 
@@ -159,9 +166,9 @@ flowchart TD
   - Read `process.env.VENDOR_ROLE_ENFORCED`.
   - IF `true` AND `userRole` is NOT `VENDOR` or `ADMIN` -> Throw `403 Forbidden ("Subscription required")`.
 - **Business Logic**:
-  - One user can create **multiple** vendor profiles, but **only one per ServiceCategory**.
-  - **DB Constraint**: `@@unique([userId, serviceCategoryId])` prevents duplicates at the database level.
-  - **App-level Check**: `findFirst({ userId, serviceCategoryId, deletedAt: null })` provides a user-friendly error message before hitting the DB.
+  - One user can create **multiple** vendor profiles, but **only one active profile per ServiceCategory**.
+  - **DB Constraint**: Partial unique index on `(userId, serviceCategoryId) WHERE deletedAt IS NULL` — prevents duplicates among active rows only.
+  - **App-level Check**: `findFirst({ userId, serviceCategoryId, deletedAt: null })` provides a user-friendly `409 Conflict` before hitting the DB constraint.
   - `prisma.vendorProfile.create({ data: { ...data, userId, serviceCategoryId } })`.
 - **Return**: Created profile with standard fields and category details.
 

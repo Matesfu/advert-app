@@ -25,7 +25,7 @@
     - [x] Add `updatePortfolioImages` controller handler <!-- id: 29 -->
     - [x] Add `PATCH /:id/images` route <!-- id: 30 -->
 - [x] **Phase 2c: Data Integrity & Schema Alignment** <!-- id: 34 -->
-    - [x] Add `@@unique([userId, serviceCategoryId])` to `VendorProfile` in `schema.prisma` <!-- id: 35 -->
+    - [x] Replace `@@unique([userId, serviceCategoryId])` with partial unique index (custom migration) for soft-delete compatibility <!-- id: 35 -->
     - [x] Remove `serviceCategoryId` from `createServiceSchema` in `vendor.schema.ts` <!-- id: 36 -->
     - [x] Confirm `Service` model depends ONLY on `VendorProfile` (no ServiceCategory FK) <!-- id: 37 -->
     - [x] Decouple Service from ServiceCategory (Services inherit category from VendorProfile) <!-- id: 33 -->
