@@ -90,6 +90,10 @@ model VendorProfile {
   portfolioImages     String[] // Array of image URLs
   city                String
   locationCoordinates Json?    // Optional: { lat: number, lng: number }
+
+  // Denormalized review stats (updated by Review module on create/update/delete)
+  averageRating       Float    @default(0) // Mean star rating (0.0–5.0)
+  reviewCount         Int      @default(0) // Total number of reviews
   
   // Foreign Keys
   userId              Int

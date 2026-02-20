@@ -29,19 +29,25 @@
     - [x] Remove `serviceCategoryId` from `createServiceSchema` in `vendor.schema.ts` <!-- id: 36 -->
     - [x] Confirm `Service` model depends ONLY on `VendorProfile` (no ServiceCategory FK) <!-- id: 37 -->
     - [x] Decouple Service from ServiceCategory (Services inherit category from VendorProfile) <!-- id: 33 -->
-- [ ] **Phase 3: Nested Service Management** (`vendor.service.ts`) <!-- id: 9 -->
-    - [ ] Implement `addService()` to create vendor packages <!-- id: 10 -->
-    - [ ] Implement `removeService()` <!-- id: 11 -->
-    - [ ] Implement `getServices()` <!-- id: 12 -->
-- [ ] **Phase 4: Controller & Routes** <!-- id: 13 -->
-    - [ ] Update `vendor.controller.ts` to pass `userRole` to service methods <!-- id: 14 -->
-    - [ ] Update `vendor.routes.ts` to remove `restrictTo` from POST (defer to service) <!-- id: 15 -->
-- [ ] **Phase 5: Verification & Testing** <!-- id: 16 -->
-    - [ ] Create `src/modules/vendors/__tests__/vendor.test.ts` <!-- id: 17 -->
-    - [ ] Implement E2E tests for Public Access & Search <!-- id: 18 -->
-    - [ ] Implement E2E tests for Role Enforcement (Feature Flag) <!-- id: 19 -->
-    - [ ] Implement E2E tests for Owner Validations <!-- id: 20 -->
-    - [ ] Implement E2E tests for **One Profile Per Category** (duplicate → 409) <!-- id: 38 -->
-    - [ ] Implement E2E tests for **Soft Delete** (delete → hidden, re-create allowed) <!-- id: 31 -->
-    - [ ] Implement E2E tests for **Portfolio Image Management** (add, remove, max limit, dedup) <!-- id: 32 -->
-    - [ ] Run full test suite (`npm test`) <!-- id: 21 -->
+- [x] **Phase 3: Nested Service Management** (`vendor.service.ts`) <!-- id: 9 -->
+    - [x] Implement `addService()` to create vendor packages <!-- id: 10 -->
+    - [x] Implement `removeService()` <!-- id: 11 -->
+    - [x] Implement `getServices()` <!-- id: 12 -->
+- [x] **Phase 4: Controller & Routes** <!-- id: 13 -->
+    - [x] Update `vendor.controller.ts` to pass `userRole` to service methods <!-- id: 14 -->
+    - [x] Update `vendor.routes.ts` to remove `restrictTo` from POST (defer to service) <!-- id: 15 -->
+- [x] **Phase 4b: Sort by Reviews (Denormalized Stats)** <!-- id: 39 -->
+    - [x] Add `averageRating Float @default(0)` and `reviewCount Int @default(0)` to `VendorProfile` Prisma schema <!-- id: 40 -->
+    - [x] Create and apply migration (`add_vendor_review_stats`) <!-- id: 41 -->
+    - [x] Extend `sortBy` enum in `listVendorsQuerySchema` with `averageRating`, `reviewCount`, `popularity` <!-- id: 42 -->
+    - [x] Update `findAll()` to handle compound `popularity` sort <!-- id: 43 -->
+    - [x] Add `recalculateReviewStats()` helper method in `vendor.service.ts` <!-- id: 44 -->
+- [x] **Phase 5: Verification & Testing** <!-- id: 16 -->
+    - [x] Create `src/modules/vendors/__tests__/vendor.test.ts` <!-- id: 17 -->
+    - [x] Implement E2E tests for Public Access & Search <!-- id: 18 -->
+    - [x] Implement E2E tests for Role Enforcement (Feature Flag) <!-- id: 19 -->
+    - [x] Implement E2E tests for Owner Validations <!-- id: 20 -->
+    - [x] Implement E2E tests for **One Profile Per Category** (duplicate → 409) <!-- id: 38 -->
+    - [x] Implement E2E tests for **Soft Delete** (delete → hidden, re-create allowed) <!-- id: 31 -->
+    - [x] Implement E2E tests for **Portfolio Image Management** (add, remove, max limit, dedup) <!-- id: 32 -->
+    - [x] Run full test suite (`npm test`) <!-- id: 21 -->

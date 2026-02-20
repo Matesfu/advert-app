@@ -142,6 +142,12 @@ class VendorServiceClass {
             ];
         }
 
+        // Build orderBy — 'popularity' uses compound sort, others use single field
+        const orderBy =
+            sortBy === 'popularity'
+                ? [{ averageRating: sortOrder }, { reviewCount: sortOrder }]
+                : { [sortBy]: sortOrder };
+
         // Run count + data in parallel for efficiency
         const [total, vendors] = await Promise.all([
             prisma.vendorProfile.count({ where }),
@@ -149,7 +155,7 @@ class VendorServiceClass {
                 where,
                 skip,
                 take: limit,
-                orderBy: { [sortBy]: sortOrder },
+                orderBy: orderBy as any,
                 include: {
                     serviceCategory: { select: { id: true, name: true, slug: true } },
                     _count: { select: { services: true, reviews: true } },
@@ -445,6 +451,44 @@ class VendorServiceClass {
         );
 
         return services;
+    }
+
+    // ========================================
+    // REVIEW STATS (denormalized aggregation)
+    // ========================================
+
+    /**
+     * Recalculate and persist `averageRating` and `reviewCount` for a vendor profile.
+     *
+     * This should be called by the Review module whenever a review is:
+     *  - Created
+     *  - Updated (rating changed)
+     *  - Deleted
+     *
+     * The values are stored directly on VendorProfile for fast sorting/filtering
+     * without needing a JOIN + GROUP BY on every list request.
+     */
+    async recalculateReviewStats(vendorProfileId: number) {
+        const stats = await prisma.review.aggregate({
+            where: { vendorProfileId },
+            _avg: { rating: true },
+            _count: { rating: true },
+        });
+
+        const averageRating = Math.round((stats._avg.rating ?? 0) * 10) / 10; // 1 decimal
+        const reviewCount = stats._count.rating;
+
+        await prisma.vendorProfile.update({
+            where: { id: vendorProfileId },
+            data: { averageRating, reviewCount },
+        });
+
+        logger.info(
+            `[VendorService] Recalculated review stats for vendor ID ${vendorProfileId}: ` +
+            `avg=${averageRating}, count=${reviewCount}`,
+        );
+
+        return { averageRating, reviewCount };
     }
 }
 

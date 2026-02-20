@@ -129,13 +129,32 @@ flowchart TD
 - [x] **Service Model**: Confirmed `Service` model has no direct FK to `ServiceCategory` in Prisma schema.
 
 ### Phase 3: Service Management (Nested Resources)
-- [ ] **`addService`**: Logic to add a service package to a vendor profile.
-- [ ] **`removeService`**: Logic to remove a service package.
-- [ ] **`getServices`**: Fetch all services for a specific vendor.
+- [x] **`addService`**: Logic to add a service package to a vendor profile.
+- [x] **`removeService`**: Logic to remove a service package.
+- [x] **`getServices`**: Fetch all services for a specific vendor.
 
 ### Phase 4: Controller & Routes
-- [ ] **Controller**: Connect `req.user` and `req.body` to service methods.
-- [ ] **Routes**: Define endpoints and apply `protect` middleware. **Remove** `restrictTo` from `POST /` to let the service handle logic.
+- [x] **Controller**: Connect `req.user` and `req.body` to service methods.
+- [x] **Routes**: Define endpoints and apply `protect` middleware. **Remove** `restrictTo` from `POST /` to let the service handle logic.
+
+### Phase 4b: Sort by Reviews (Denormalized Stats)
+
+> [!NOTE]
+> **Approach**: Instead of computing average rating and review count dynamically (expensive JOIN + GROUP BY on every list request), we store **denormalized** `averageRating` and `reviewCount` fields directly on `VendorProfile`. These are updated whenever a review is created/updated/deleted (handled by the Review module). This is the standard pattern used by Amazon, Airbnb, Fiverr, and Upwork.
+
+#### Schema Changes (`prisma/schema.prisma`)
+- Add `averageRating Float @default(0)` to `VendorProfile` — stores the mean star rating (0.0–5.0).
+- Add `reviewCount Int @default(0)` to `VendorProfile` — stores the total number of reviews.
+- Create migration: `npx prisma migrate dev --name add_vendor_review_stats`.
+
+#### Validation Schema Changes (`vendor.schema.ts`)
+- Extend `sortBy` enum from `['createdAt', 'basePrice']` to `['createdAt', 'basePrice', 'averageRating', 'reviewCount', 'popularity']`.
+- `popularity` is a **compound sort**: `[{ averageRating: 'desc' }, { reviewCount: 'desc' }]` — highest rating first, most reviews as tiebreaker.
+
+#### Service Logic Changes (`vendor.service.ts`)
+- **`findAll()`**: Handle `sortBy === 'popularity'` by using an array `orderBy` instead of a single `{ [sortBy]: sortOrder }`.
+- **`recalculateReviewStats(vendorProfileId)`**: New helper method that recalculates `averageRating` and `reviewCount` from the `Review` table. This will be called by the Review module whenever a review is created, updated, or deleted.
+- **`findAll()` includes**: Add `averageRating` and `reviewCount` to the returned fields (they're already on the model).
 
 ### Phase 5: Testing & Verification
 - [ ] **E2E Tests**: Create `vendor.test.ts` covering all scenarios.
