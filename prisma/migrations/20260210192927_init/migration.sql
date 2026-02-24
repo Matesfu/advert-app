@@ -1,3 +1,6 @@
+﻿-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('CUSTOMER', 'VENDOR', 'ADMIN');
 
@@ -20,6 +23,7 @@ CREATE TABLE "User" (
     "isVerified" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -36,6 +40,19 @@ CREATE TABLE "EmailVerificationToken" (
 );
 
 -- CreateTable
+CREATE TABLE "RefreshToken" (
+    "id" SERIAL NOT NULL,
+    "token" TEXT NOT NULL,
+    "userId" INTEGER NOT NULL,
+    "userAgent" TEXT,
+    "ipAddress" TEXT,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "VendorProfile" (
     "id" SERIAL NOT NULL,
     "businessName" TEXT NOT NULL,
@@ -44,9 +61,13 @@ CREATE TABLE "VendorProfile" (
     "portfolioImages" TEXT[],
     "city" TEXT NOT NULL,
     "locationCoordinates" JSONB,
+    "averageRating" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "reviewCount" INTEGER NOT NULL DEFAULT 0,
     "userId" INTEGER NOT NULL,
+    "serviceCategoryId" INTEGER NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "VendorProfile_pkey" PRIMARY KEY ("id")
 );
@@ -79,6 +100,7 @@ CREATE TABLE "ServiceCategory" (
     "id" SERIAL NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
+    "imageUrl" TEXT,
 
     CONSTRAINT "ServiceCategory_pkey" PRIMARY KEY ("id")
 );
@@ -98,7 +120,6 @@ CREATE TABLE "Service" (
     "description" TEXT,
     "price" DECIMAL(10,2) NOT NULL,
     "vendorProfileId" INTEGER NOT NULL,
-    "serviceCategoryId" INTEGER NOT NULL,
 
     CONSTRAINT "Service_pkey" PRIMARY KEY ("id")
 );
@@ -155,6 +176,15 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "EmailVerificationToken_token_key" ON "EmailVerificationToken"("token");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_expiresAt_idx" ON "RefreshToken"("expiresAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "EventType_name_key" ON "EventType"("name");
 
 -- CreateIndex
@@ -176,7 +206,13 @@ CREATE UNIQUE INDEX "Conversation_userId_vendorProfileId_key" ON "Conversation"(
 ALTER TABLE "EmailVerificationToken" ADD CONSTRAINT "EmailVerificationToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "VendorProfile" ADD CONSTRAINT "VendorProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorProfile" ADD CONSTRAINT "VendorProfile_serviceCategoryId_fkey" FOREIGN KEY ("serviceCategoryId") REFERENCES "ServiceCategory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "LegalDocument" ADD CONSTRAINT "LegalDocument_vendorProfileId_fkey" FOREIGN KEY ("vendorProfileId") REFERENCES "VendorProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -189,9 +225,6 @@ ALTER TABLE "EventTypeServiceCategory" ADD CONSTRAINT "EventTypeServiceCategory_
 
 -- AddForeignKey
 ALTER TABLE "Service" ADD CONSTRAINT "Service_vendorProfileId_fkey" FOREIGN KEY ("vendorProfileId") REFERENCES "VendorProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Service" ADD CONSTRAINT "Service_serviceCategoryId_fkey" FOREIGN KEY ("serviceCategoryId") REFERENCES "ServiceCategory"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Review" ADD CONSTRAINT "Review_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -216,3 +249,10 @@ ALTER TABLE "Message" ADD CONSTRAINT "Message_conversationId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "Message" ADD CONSTRAINT "Message_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Custom: Partial Unique Index for soft-delete support
+-- Only enforces uniqueness among active (non-deleted) rows
+CREATE UNIQUE INDEX "VendorProfile_userId_serviceCategoryId_active"
+ON "VendorProfile" ("userId", "serviceCategoryId")
+WHERE "deletedAt" IS NULL;
+
