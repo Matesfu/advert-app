@@ -116,7 +116,7 @@ class VendorServiceClass {
      * Automatically excludes soft-deleted profiles.
      */
     async findAll(query: ListVendorsQuery) {
-        const { page, limit, city, minPrice, maxPrice, search, sortBy, sortOrder } = query;
+        const { page, limit, city, minPrice, maxPrice, search, serviceCategoryId, sortBy, sortOrder } = query;
         const skip = (page - 1) * limit;
 
         // Build dynamic WHERE clause — always exclude soft-deleted
@@ -124,6 +124,11 @@ class VendorServiceClass {
 
         if (city) {
             where.city = { contains: city, mode: 'insensitive' as const };
+        }
+
+        // Filter by service category
+        if (serviceCategoryId) {
+            where.serviceCategoryId = serviceCategoryId;
         }
 
         // Price range filter on basePrice

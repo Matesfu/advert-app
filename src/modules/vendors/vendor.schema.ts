@@ -134,6 +134,11 @@ export const listVendorsQuerySchema = z.object({
         .transform((val) => parseFloat(val))
         .optional(),
     search: z.string().optional(),
+    serviceCategoryId: z
+        .string()
+        .regex(/^\d+$/, 'serviceCategoryId must be a valid number')
+        .transform((val) => parseInt(val, 10))
+        .optional(),
     sortBy: z.enum(['createdAt', 'basePrice', 'averageRating', 'reviewCount', 'popularity']).optional().default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
