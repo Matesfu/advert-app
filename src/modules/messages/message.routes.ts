@@ -12,6 +12,9 @@ router.use(protect);
 /** GET /api/v1/messages/conversations - List conversations */
 router.get('/conversations', messageController.getConversations);
 
+/** GET /api/v1/messages/unread-count - Get total unread message count */
+router.get('/unread-count', messageController.getUnreadCount);
+
 /** POST /api/v1/messages/conversations - Start conversation */
 router.post(
     '/conversations',

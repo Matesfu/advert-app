@@ -44,6 +44,12 @@ const envSchema = z.object({
         .enum(['true', 'false'])
         .default('false')
         .transform((val) => val === 'true'),
+
+    // Email Notifications
+    EMAIL_NOTIFICATIONS_ENABLED: z
+        .enum(['true', 'false'])
+        .default('false')
+        .transform((val) => val === 'true'),
 });
 
 // Validate process.env

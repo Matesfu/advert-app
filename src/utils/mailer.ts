@@ -49,3 +49,62 @@ export const sendVerificationEmail = async (to: string, token: string): Promise<
         // In a production app, we might want to handle this differently (e.g., job queue)
     }
 };
+
+/**
+ * Send an email notification when a new message is received.
+ *
+ * Controlled by the EMAIL_NOTIFICATIONS_ENABLED feature flag.
+ * Fire-and-forget: failures are logged, never thrown.
+ *
+ * @param to - Recipient email address
+ * @param senderName - Display name of the message sender
+ * @param messagePreview - First 100 chars of the message content
+ * @param conversationId - ID of the conversation (for deep-link)
+ */
+export const sendNewMessageEmail = async (
+    to: string,
+    senderName: string,
+    messagePreview: string,
+    conversationId: number
+): Promise<void> => {
+    // Feature flag check
+    if (!env.EMAIL_NOTIFICATIONS_ENABLED) {
+        logger.info(`[Mailer] Email notifications disabled — skipping notification to ${to}`);
+        return;
+    }
+
+    // Skip in test environment
+    if (env.NODE_ENV === 'test') return;
+
+    const conversationUrl = `${env.FRONTEND_URL}/messages/${conversationId}`;
+    const preview = messagePreview.length > 100
+        ? messagePreview.substring(0, 100) + '…'
+        : messagePreview;
+
+    const mailOptions = {
+        from: env.SMTP_FROM,
+        to,
+        subject: `New message from ${senderName} — Eventify`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #333;">You have a new message</h2>
+                <div style="background-color: #f5f5f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                    <p style="margin: 0 0 8px 0; font-weight: bold; color: #555;">${senderName}</p>
+                    <p style="margin: 0; color: #333;">${preview}</p>
+                </div>
+                <a href="${conversationUrl}" style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 16px 0;">View Conversation</a>
+                <p style="color: #999; font-size: 12px; margin-top: 24px;">
+                    You received this email because someone sent you a message on Eventify.
+                </p>
+            </div>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        logger.info(`[Mailer] New message notification sent to ${to}`);
+    } catch (error) {
+        logger.error(`[Mailer] Error sending message notification to ${to}:`, error);
+        // Fire-and-forget: never block the API response
+    }
+};

@@ -48,3 +48,11 @@ export const markAsRead = async (req: Request, res: Response): Promise<void> => 
     await messageService.markAsRead(userId, id);
     sendNoContent(res);
 };
+
+/** GET /api/v1/messages/unread-count - Get total unread count */
+export const getUnreadCount = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.id;
+    logger.info(`[MessageController] Get unread count for user ID: ${userId}`);
+    const count = await messageService.getUnreadCount(userId);
+    sendSuccess(res, { unreadCount: count });
+};
