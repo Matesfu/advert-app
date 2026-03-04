@@ -50,6 +50,12 @@ const envSchema = z.object({
         .enum(['true', 'false'])
         .default('false')
         .transform((val) => val === 'true'),
+
+    // Security
+    ENABLE_CSP: z
+        .enum(['true', 'false'])
+        .default('true')
+        .transform((val) => val === 'true'),
 });
 
 // Validate process.env

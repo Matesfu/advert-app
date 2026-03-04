@@ -2,6 +2,7 @@ import { prisma } from '../../config/prisma';
 import { AppError } from '../../utils/AppError';
 import { logger } from '../../utils/logger';
 import { sendNewMessageEmail } from '../../utils/mailer';
+import { socketEmitter } from '../../socket/socketEmitter';
 import { Prisma } from '@prisma/client';
 import type { StartConversationInput, SendMessageInput } from './message.schema';
 
@@ -367,7 +368,15 @@ class MessageService {
             }
         }
 
-        // 6. Return the full conversation
+        // 6. Real-time: notify the vendor owner of the new conversation
+        socketEmitter.emitConversationUpdated(
+            [vendorProfile.userId],
+            conversation.id,
+            { id: message.id, content: data.message, senderId: userId, createdAt: message.createdAt },
+            new Date()
+        );
+
+        // 7. Return the full conversation
         return {
             id: conversation.id,
             userId: conversation.userId,
@@ -490,6 +499,25 @@ class MessageService {
             }
         }
 
+        // 5. Real-time: push message to conversation room + inbox update
+        socketEmitter.emitNewMessage(conversationId, {
+            id: message.id,
+            content: data.content,
+            senderId: userId,
+            conversationId,
+            isRead: false,
+            createdAt: message.createdAt,
+            sender: message.sender,
+        });
+
+        const vendorOwnerId = conversation.vendorProfile.owner.id;
+        socketEmitter.emitConversationUpdated(
+            [conversation.userId, vendorOwnerId],
+            conversationId,
+            { id: message.id, content: data.content, senderId: userId, createdAt: message.createdAt },
+            new Date()
+        );
+
         return message;
     }
 
@@ -520,6 +548,9 @@ class MessageService {
             },
             data: { isRead: true },
         });
+
+        // Real-time: notify the conversation room of read receipts
+        socketEmitter.emitMessagesRead(conversationId, userId);
     }
 
     /**
