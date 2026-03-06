@@ -108,3 +108,68 @@ export const sendNewMessageEmail = async (
         // Fire-and-forget: never block the API response
     }
 };
+
+/**
+ * Send an email notification when a new review is received.
+ *
+ * Controlled by the EMAIL_NOTIFICATIONS_ENABLED feature flag.
+ * Fire-and-forget: failures are logged, never thrown.
+ *
+ * @param to - Vendor owner email address
+ * @param reviewerName - Display name of the reviewer
+ * @param rating - Star rating (1-5)
+ * @param comment - Review comment (optional)
+ * @param businessName - Name of the vendor business
+ * @param vendorProfileId - ID of the vendor profile (for deep-link)
+ */
+export const sendNewReviewEmail = async (
+    to: string,
+    reviewerName: string,
+    rating: number,
+    comment: string | null,
+    businessName: string,
+    vendorProfileId: number
+): Promise<void> => {
+    // Feature flag check
+    if (!env.EMAIL_NOTIFICATIONS_ENABLED) {
+        logger.info(`[Mailer] Email notifications disabled — skipping review notification to ${to}`);
+        return;
+    }
+
+    // Skip in test environment
+    if (env.NODE_ENV === 'test') return;
+
+    const profileUrl = `${env.FRONTEND_URL}/vendors/${vendorProfileId}`;
+    const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+    const commentPreview = comment
+        ? (comment.length > 150 ? comment.substring(0, 150) + '…' : comment)
+        : '<em>No comment provided</em>';
+
+    const mailOptions = {
+        from: env.SMTP_FROM,
+        to,
+        subject: `New ${rating}-star review on ${businessName} — Eventify`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #333;">You received a new review</h2>
+                <div style="background-color: #f5f5f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                    <p style="margin: 0 0 8px 0; font-size: 24px; color: #f59e0b;">${stars}</p>
+                    <p style="margin: 0 0 8px 0; font-weight: bold; color: #555;">${reviewerName}</p>
+                    <p style="margin: 0; color: #333;">${commentPreview}</p>
+                </div>
+                <a href="${profileUrl}" style="background-color: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 16px 0;">View Your Profile</a>
+                <p style="color: #999; font-size: 12px; margin-top: 24px;">
+                    You received this email because someone left a review on your business profile on Eventify.
+                </p>
+            </div>
+        `,
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        logger.info(`[Mailer] New review notification sent to ${to}`);
+    } catch (error) {
+        logger.error(`[Mailer] Error sending review notification to ${to}:`, error);
+        // Fire-and-forget: never block the API response
+    }
+};

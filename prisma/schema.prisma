@@ -200,6 +200,9 @@ model Review {
   vendorProfile   VendorProfile @relation(fields: [vendorProfileId], references: [id])
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, vendorProfileId]) // One review per user per vendor
 }
 
 // 7. Favorites / Wishlist
